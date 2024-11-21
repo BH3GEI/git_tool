@@ -75,7 +75,7 @@ declare -A git_commands=(
 
     # 暂存操作
     ["5.1"]="git stash                   # 暂存当前修改"
-    ["5.2"]="git stash save \"message\"    # 添加说明并暂存"
+    ["5.2"]="git stash save \"message\"    # 添���说明并暂存"
     ["5.3"]="git stash list              # 查看暂存列表"
     ["5.4"]="git stash pop               # 恢复最近的暂存"
     ["5.5"]="git stash apply             # 应用暂存但不删除"
@@ -433,6 +433,62 @@ execute_command() {
     eval "$command"
 }
 
+# 添加新函数来获取 GitHub 仓库列表
+get_github_repo_url() {
+    # 检查是否安装了 gh
+    if ! command -v gh &> /dev/null; then
+        echo -e "${RED}错误: 未安装 GitHub CLI (gh)${NC}"
+        echo "请先安装 GitHub CLI: https://cli.github.com/"
+        return 1
+    fi
+
+    # 检查是否已登录
+    if ! gh auth status &> /dev/null; then
+        echo -e "${YELLOW}请先登录 GitHub CLI${NC}"
+        gh auth login
+    fi
+
+    echo -e "${YELLOW}正在获取您的 GitHub 仓库列表...${NC}"
+    
+    # 获取仓库列表并显示
+    echo -e "\n${BLUE}您的仓库列表：${NC}"
+    repos=$(gh repo list --json nameWithOwner,url --limit 100 --jq '.[] | "\(.nameWithOwner)|\(.url)"')
+    
+    if [ -z "$repos" ]; then
+        echo -e "${YELLOW}未找到任何仓库${NC}"
+        return 1
+    fi
+
+    # 显示仓库列表供用户选择
+    local i=1
+    declare -A repo_map
+    while IFS='|' read -r name url; do
+        echo -e "${BLUE}$i${NC}. $name"
+        repo_map[$i]=$url
+        ((i++))
+    done <<< "$repos"
+
+    echo -e "\n${YELLOW}选择一个仓库或输入自定义 URL${NC}"
+    echo "• 输入数字选择列出的仓库"
+    echo "• 直接输入 URL 添加其他仓库"
+    echo "• 输入 'b' 返回"
+    echo -n "请选择: "
+    read choice
+
+    if [[ $choice == "b" ]]; then
+        return 1
+    elif [[ $choice =~ ^[0-9]+$ ]] && [ -n "${repo_map[$choice]}" ]; then
+        echo "${repo_map[$choice]}"
+        return 0
+    elif [[ $choice =~ ^https?:// ]]; then
+        echo "$choice"
+        return 0
+    else
+        echo -e "${RED}无效的选择${NC}"
+        return 1
+    fi
+}
+
 # 修改 handle_command 函数
 handle_command() {
     local key=$1
@@ -515,11 +571,20 @@ handle_command() {
 
             # 检查命令中是否包含占位符
             if [[ $command == *"<"*">"* ]]; then
-                echo -e "\n${YELLOW}该命令包含需要替换的参数：${NC}"
-                echo -e "${BLUE}$command${NC}"
-                echo -n "请输入完整命令: "
-                read -e -i "$command" complete_command
-                execute_command "$complete_command" $is_dangerous
+                if [[ $command == *"git remote add origin <url>"* ]]; then
+                    echo -e "\n${YELLOW}正在获取仓库信息...${NC}"
+                    repo_url=$(get_github_repo_url)
+                    if [ $? -eq 0 ]; then
+                        complete_command="git remote add origin $repo_url"
+                        execute_command "$complete_command" $is_dangerous
+                    fi
+                else
+                    echo -e "\n${YELLOW}该命令包含需要替换的参数：${NC}"
+                    echo -e "${BLUE}$command${NC}"
+                    echo -n "请输入完整命令: "
+                    read -e -i "$command" complete_command
+                    execute_command "$complete_command" $is_dangerous
+                fi
             else
                 execute_command "$command" $is_dangerous
             fi
