@@ -1,11 +1,13 @@
 #!/bin/bash
 
 # 设置颜色
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-RED='\033[0;31m'
+BLUE='\033[38;2;85;205;252m'      
+PINK='\033[38;2;247;168;184m'     
+WHITE='\033[38;2;255;255;255m'    
+NC='\033[0m'                     
+GREEN=$BLUE                      
+YELLOW=$PINK                     
+RED=$PINK                         
 
 # 定义每页显示的条目数
 ITEMS_PER_PAGE=10
