@@ -33,6 +33,11 @@ declare -A git_commands=(
     ["1.8"]="git log                     # 查看提交历史"
     ["1.9"]="git log --oneline          # 查看简化的提交历史"
     ["1.10"]="git diff                   # 查看未暂存的更改"
+    ["1.11"]="apply_gitignore_template    # 选择并应用 .gitignore 模板"
+    ["1.12"]="git check-ignore <file>    # 检查文件是否被忽略"
+    ["1.13"]="git rm --cached <file>     # 从Git中移除但保留在工作目录"
+    ["1.14"]="git update-index --skip-worktree <file>  # 临时忽略文件更改"
+    ["1.15"]="git update-index --no-skip-worktree <file>  # 恢复跟踪文件更改"
 
     # 分支管理
     ["2.1"]="git branch                  # 查看本地分支列表"
@@ -111,7 +116,8 @@ show_categories() {
     echo -e "${GREEN}=== Git 命令速查字典 ===${NC}"
     echo -e "${YELLOW}选择命令分类：${NC}"
     echo "----------------------------------------"
-    for key in "${!categories[@]}"; do
+    # 使用排序后的键来显示分类
+    for key in $(echo "${!categories[@]}" | tr ' ' '\n' | sort -n); do
         echo -e "${BLUE}$key${NC}. ${categories[$key]}"
     done
     echo "----------------------------------------"
@@ -152,45 +158,352 @@ show_commands() {
     done
 
     echo "----------------------------------------"
-    echo -e "页码: $current_page / $total_pages"
-    echo "输入命令编号复制命令"
-    echo "n: 下一页, p: 上一页, b: 返回分类, q: 退出, s: 搜索"
+    echo -e "页码: $current_page / $total_pages (共 $total_items 条命令)"
+    echo -e "${YELLOW}导航：${NC}"
+    echo "• n: 下一页"
+    echo "• p: 上一页"
+    echo "• b: 返回分类"
+    echo "• q: 退出"
+    echo "• s: 搜索"
+    echo "• 输入命令编号执行或复制命令"
 }
 
 # 搜索函数
 search_commands() {
+    echo -e "${YELLOW}搜索提示：${NC}"
+    echo "• 搜索不区分大小写"
+    echo "• 可以搜索命令名或描述"
+    echo "• 直接回车返回主菜单"
     echo -n "输入搜索关键词: "
     read keyword
+    
+    if [[ -z "$keyword" ]]; then
+        return
+    fi
+    
     echo "----------------------------------------"
     echo "搜索结果："
+    local found=0
     for key in "${!git_commands[@]}"; do
         if echo "${git_commands[$key]}" | grep -i "$keyword" > /dev/null; then
             echo -e "${BLUE}$key${NC}. ${git_commands[$key]}"
+            ((found++))
         fi
     done
+    
+    if [[ $found -eq 0 ]]; then
+        echo -e "${YELLOW}未找到匹配的命令${NC}"
+    else
+        echo -e "\n${GREEN}共找到 $found 个匹配结果${NC}"
+    fi
     echo "----------------------------------------"
     echo "按回车键返回..."
     read
 }
 
-# 修改复制和执行函数
+# 添加 .gitignore 模板
+declare -A gitignore_templates=(
+    ["1"]="Node.js"
+    ["2"]="Python"
+    ["3"]="Visual Studio Code"
+    ["4"]="JetBrains IDEs"
+    ["5"]="macOS"
+    ["6"]="Windows"
+    ["7"]="Linux"
+    ["8"]="Java"
+    ["9"]="Maven"
+    ["10"]="Gradle"
+)
+
+declare -A gitignore_contents=(
+    ["Node.js"]="# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.npm
+.env
+.env.local
+.env.*.local
+dist/
+build/"
+
+    ["Python"]="# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.venv
+venv/
+ENV/"
+
+    ["Visual Studio Code"]="# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.history/
+.ionide"
+
+    ["JetBrains IDEs"]="# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/"
+
+    ["macOS"]="# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent"
+
+    ["Windows"]="# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk"
+
+    ["Linux"]="# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*"
+
+    ["Java"]="# Java
+*.class
+*.log
+*.ctxt
+.mtj.tmp/
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+replay_pid*
+target/"
+
+    ["Maven"]="# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties"
+
+    ["Gradle"]="# Gradle
+.gradle
+**/build/
+!src/**/build/
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+gradle/wrapper/gradle-wrapper.properties"
+)
+
+# 添加 gitignore 模板应用函数
+apply_gitignore_template() {
+    clear
+    echo -e "${GREEN}=== 选择 .gitignore 模板 ===${NC}"
+    echo "----------------------------------------"
+    # 使用排序后的键来显示模板
+    for key in $(echo "${!gitignore_templates[@]}" | tr ' ' '\n' | sort -n); do
+        echo -e "${BLUE}$key${NC}. ${gitignore_templates[$key]}"
+    done
+    echo "----------------------------------------"
+    echo "输入 'b' 返回, 'q' 退出"
+    echo -n "请选择模板 (可多选，用空格分隔): "
+    read -a choices
+
+    if [[ ${#choices[@]} -eq 0 ]]; then
+        echo -e "\n${YELLOW}未选择任何模板，操作取消${NC}"
+        echo -e "\n按回车键继续..."
+        read
+        return
+    fi
+
+    for choice in "${choices[@]}"; do
+        if [[ $choice == "q" ]]; then
+            exit 0
+        elif [[ $choice == "b" ]]; then
+            return
+        elif [[ -n "${gitignore_templates[$choice]}" ]]; then
+            template_name="${gitignore_templates[$choice]}"
+            echo -e "\n${GREEN}应用 $template_name 模板${NC}"
+            if [[ ! -f .gitignore ]]; then
+                echo -e "# $template_name" > .gitignore
+                echo "${gitignore_contents[$template_name]}" >> .gitignore
+            else
+                echo -e "\n# $template_name" >> .gitignore
+                echo "${gitignore_contents[$template_name]}" >> .gitignore
+            fi
+        fi
+    done
+    
+    echo -e "\n${GREEN}已更新 .gitignore 文件${NC}"
+    echo "是否要查看文件内容？(y/N): "
+    read view_content
+    if [[ $view_content =~ ^[Yy]$ ]]; then
+        echo -e "\n${YELLOW}=== .gitignore 内容 ===${NC}"
+        cat .gitignore
+    fi
+    
+    echo -e "\n按回车键继续..."
+    read
+}
+
+# 修改命令执行函数，添加编辑功能
+execute_command() {
+    local command="$1"
+    local is_dangerous="$2"
+    
+    if [ $is_dangerous -eq 1 ]; then
+        echo -e "\n${RED}⚠️  警告：这是一个危险命令！${NC}"
+        echo -e "${RED}该命令可能会导致：${NC}"
+        echo -e "  • 不可恢复的数据丢失"
+        echo -e "  • 工作区的永久性改变"
+        echo -e "${YELLOW}命令：${NC}$command"
+        echo -n "确定要执行吗？(y/N): "
+        read confirm
+        if [[ ! $confirm =~ ^[Yy]$ ]]; then
+            echo -e "\n${YELLOW}操作已取消${NC}"
+            return
+        fi
+    fi
+    
+    # 显示命令并提供编辑选项
+    echo -e "\n${YELLOW}当前命令：${NC}${command}"
+    echo -e "按回车直接执行，输入 'e' 编辑命令: "
+    read edit_choice
+    
+    if [[ $edit_choice == "e" ]]; then
+        echo -n "请输入修改后的命令: "
+        read -e -i "$command" command
+    fi
+    
+    # 执行命令
+    echo -e "\n${GREEN}执行命令：${NC}$command"
+    eval "$command"
+}
+
+# 修改 handle_command 函数
 handle_command() {
     local key=$1
     command=$(echo "${git_commands[$key]}" | cut -d '#' -f1 | tr -d '\n' | tr -d '\r' | sed 's/[[:space:]]*$//')
     
+    # 特殊处理 gitignore 模板命令
+    if [[ $command == "apply_gitignore_template" ]]; then
+        echo -e "\n${YELLOW}选择 .gitignore 模板：${NC}"
+        echo "----------------------------------------"
+        for key in "${!gitignore_templates[@]}"; do
+            echo -e "${BLUE}$key${NC}. ${gitignore_templates[$key]}"
+        done
+        echo "----------------------------------------"
+        echo "可以输入多个编号（用空格分隔）"
+        echo -n "请选择要应用的模板: "
+        read -a choices
+
+        if [[ ${#choices[@]} -eq 0 ]]; then
+            echo -e "\n${YELLOW}未选择任何模板，操作取消${NC}"
+            echo -e "\n按回车键继续..."
+            read
+            return
+        fi
+
+        for choice in "${choices[@]}"; do
+            if [[ -n "${gitignore_templates[$choice]}" ]]; then
+                template_name="${gitignore_templates[$choice]}"
+                echo -e "\n${GREEN}应用 $template_name 模板${NC}"
+                if [[ ! -f .gitignore ]]; then
+                    echo -e "# $template_name" > .gitignore
+                    echo "${gitignore_contents[$template_name]}" >> .gitignore
+                else
+                    echo -e "\n# $template_name" >> .gitignore
+                    echo "${gitignore_contents[$template_name]}" >> .gitignore
+                fi
+            fi
+        done
+        
+        echo -e "\n${GREEN}已更新 .gitignore 文件${NC}"
+        echo "是否要查看文件内容？(y/N): "
+        read view_content
+        if [[ $view_content =~ ^[Yy]$ ]]; then
+            echo -e "\n${YELLOW}=== .gitignore 内容 ===${NC}"
+            cat .gitignore
+        fi
+        
+        echo -e "\n按回车键继续..."
+        read
+        return
+    fi
+
     echo -e "\n${YELLOW}选择操作：${NC}"
     echo "1. 复制命令"
-    echo "2. 执行命令"
+    echo "2. 执行命令 (默认)"
     echo "3. 返回"
-    echo -n "请选择 (1-3): "
+    echo -n "请选择 (回车执行命令): "
     read operation
 
     case $operation in
-        1)
-            echo "$command" | tr -d '\n' | pbcopy 2>/dev/null || xclip -selection clipboard 2>/dev/null || echo "无法复制到剪贴板"
-            echo -e "\n${GREEN}已复制命令：${NC}$command"
+        "1")
+            if echo "$command" | tr -d '\n' | pbcopy 2>/dev/null || echo "$command" | tr -d '\n' | xclip -selection clipboard 2>/dev/null; then
+                echo -e "\n${GREEN}✓ 已成功复制命令到剪贴板：${NC}"
+                echo -e "${BLUE}$command${NC}"
+            else
+                echo -e "\n${RED}✗ 复制失败：系统不支持剪贴板操作${NC}"
+            fi
             ;;
-        2)
+        "3")
+            return
+            ;;
+        *)  # 默认执行命令（包括空输入）
             # 检查是否是危险命令
             is_dangerous=0
             for dangerous_cmd in "${!dangerous_commands[@]}"; do
@@ -200,53 +513,16 @@ handle_command() {
                 fi
             done
 
-            # 如果是危险命令，需要二次确认
-            if [ $is_dangerous -eq 1 ]; then
-                echo -e "\n${YELLOW}警告：这是一个危险命令，可能会导致数据丢失！${NC}"
-                echo -e "${RED}命令：${NC}$command"
-                echo -n "确定要执行吗？(y/N): "
-                read confirm
-                if [[ ! $confirm =~ ^[Yy]$ ]]; then
-                    echo -e "\n${YELLOW}操作已取消${NC}"
-                    echo -e "\n按回车键继续..."
-                    read
-                    return
-                fi
-            fi
-
             # 检查命令中是否包含占位符
             if [[ $command == *"<"*">"* ]]; then
                 echo -e "\n${YELLOW}该命令包含需要替换的参数：${NC}"
                 echo -e "${BLUE}$command${NC}"
                 echo -n "请输入完整命令: "
-                read complete_command
-                
-                # 如果修改后的命令也是危险命令，再次确认
-                if [ $is_dangerous -eq 1 ]; then
-                    echo -e "\n${YELLOW}请再次确认完整命令：${NC}"
-                    echo -e "${RED}$complete_command${NC}"
-                    echo -n "确定要执行吗？(y/N): "
-                    read confirm
-                    if [[ ! $confirm =~ ^[Yy]$ ]]; then
-                        echo -e "\n${YELLOW}操作已取消${NC}"
-                        echo -e "\n按回车键继续..."
-                        read
-                        return
-                    fi
-                fi
-                
-                echo -e "\n${GREEN}执行命令：${NC}$complete_command"
-                eval "$complete_command"
+                read -e -i "$command" complete_command
+                execute_command "$complete_command" $is_dangerous
             else
-                echo -e "\n${GREEN}执行命令：${NC}$command"
-                eval "$command"
+                execute_command "$command" $is_dangerous
             fi
-            ;;
-        3)
-            return
-            ;;
-        *)
-            echo "无效的选择"
             ;;
     esac
     
@@ -291,13 +567,13 @@ while true; do
                 ;;
             "n")
                 # 计算总页数并检查是否可以翻到下一页
-                local total_items=0
+                total_items=0
                 for key in "${!git_commands[@]}"; do
                     if [[ $key == $current_category.* ]]; then
                         ((total_items++))
                     fi
                 done
-                local total_pages=$(( (total_items + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE ))
+                total_pages=$(( (total_items + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE ))
                 
                 if (( current_page < total_pages )); then
                     ((current_page++))
