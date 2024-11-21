@@ -75,7 +75,7 @@ declare -A git_commands=(
 
     # 暂存操作
     ["5.1"]="git stash                   # 暂存当前修改"
-    ["5.2"]="git stash save \"message\"    # 添���说明并暂存"
+    ["5.2"]="git stash save \"message\"    # 添加说明并暂存"
     ["5.3"]="git stash list              # 查看暂存列表"
     ["5.4"]="git stash pop               # 恢复最近的暂存"
     ["5.5"]="git stash apply             # 应用暂存但不删除"
@@ -413,7 +413,7 @@ execute_command() {
         echo -n "确定要执行吗？(y/N): "
         read confirm
         if [[ ! $confirm =~ ^[Yy]$ ]]; then
-            echo -e "\n${YELLOW}操作已取消${NC}"
+            echo -e "\n${YELLOW}操作取消${NC}"
             return
         fi
     fi
@@ -435,58 +435,83 @@ execute_command() {
 
 # 添加新函数来获取 GitHub 仓库列表
 get_github_repo_url() {
-    # 检查是否安装了 gh
-    if ! command -v gh &> /dev/null; then
-        echo -e "${RED}错误: 未安装 GitHub CLI (gh)${NC}"
-        echo "请先安装 GitHub CLI: https://cli.github.com/"
-        return 1
-    fi
-
-    # 检查是否已登录
-    if ! gh auth status &> /dev/null; then
-        echo -e "${YELLOW}请先登录 GitHub CLI${NC}"
-        gh auth login
-    fi
-
-    echo -e "${YELLOW}正在获取您的 GitHub 仓库列表...${NC}"
-    
-    # 获取仓库列表并显示
-    echo -e "\n${BLUE}您的仓库列表：${NC}"
-    repos=$(gh repo list --json nameWithOwner,url --limit 100 --jq '.[] | "\(.nameWithOwner)|\(.url)"')
-    
-    if [ -z "$repos" ]; then
-        echo -e "${YELLOW}未找到任何仓库${NC}"
-        return 1
-    fi
-
-    # 显示仓库列表供用户选择
-    local i=1
-    declare -A repo_map
-    while IFS='|' read -r name url; do
-        echo -e "${BLUE}$i${NC}. $name"
-        repo_map[$i]=$url
-        ((i++))
-    done <<< "$repos"
-
-    echo -e "\n${YELLOW}选择一个仓库或输入自定义 URL${NC}"
-    echo "• 输入数字选择列出的仓库"
-    echo "• 直接输入 URL 添加其他仓库"
-    echo "• 输入 'b' 返回"
+    echo -e "\n${YELLOW}选择仓库 URL 的方式：${NC}"
+    echo "1. 从 GitHub 仓库列表选择"
+    echo "2. 手动输入仓库 URL"
+    echo "3. 返回"
     echo -n "请选择: "
     read choice
 
-    if [[ $choice == "b" ]]; then
-        return 1
-    elif [[ $choice =~ ^[0-9]+$ ]] && [ -n "${repo_map[$choice]}" ]; then
-        echo "${repo_map[$choice]}"
-        return 0
-    elif [[ $choice =~ ^https?:// ]]; then
-        echo "$choice"
-        return 0
-    else
-        echo -e "${RED}无效的选择${NC}"
-        return 1
-    fi
+    case $choice in
+        "1")
+            # 检查是否安装了 gh
+            if ! command -v gh &> /dev/null; then
+                echo -e "${RED}错误: 未安装 GitHub CLI (gh)${NC}"
+                echo "请先安装 GitHub CLI: https://cli.github.com/"
+                return 1
+            fi
+
+            # 检查是否已登录
+            if ! gh auth status &> /dev/null; then
+                echo -e "${YELLOW}请先登录 GitHub CLI${NC}"
+                gh auth login
+                if [ $? -ne 0 ]; then
+                    echo -e "${RED}登录失败${NC}"
+                    return 1
+                fi
+            fi
+
+            echo -e "${YELLOW}正在获取您的 GitHub 仓库列表...${NC}"
+            repos=$(timeout 5s gh repo list --json nameWithOwner,url --limit 100 --jq '.[] | "\(.nameWithOwner)|\(.url)"' 2>/dev/null)
+            
+            if [ $? -ne 0 ] || [ -z "$repos" ]; then
+                echo -e "${RED}获取仓库列表失败${NC}"
+                return 1
+            fi
+
+            # 显示仓库列表供用户选择
+            local i=1
+            declare -A repo_map
+            while IFS='|' read -r name url; do
+                echo -e "${BLUE}$i${NC}. $name"
+                repo_map[$i]=$url
+                ((i++))
+            done <<< "$repos"
+
+            echo -n "请选择仓库编号: "
+            read repo_choice
+            if [[ $repo_choice =~ ^[0-9]+$ ]] && [ -n "${repo_map[$repo_choice]}" ]; then
+                echo "${repo_map[$repo_choice]}"
+                return 0
+            else
+                echo -e "${RED}无效的选择${NC}"
+                return 1
+            fi
+            ;;
+            
+        "2")
+            echo -e "\n${YELLOW}请输入仓库 URL${NC}"
+            echo "示例格式："
+            echo "• HTTPS: https://github.com/username/repo.git"
+            echo "• SSH: git@github.com:username/repo.git"
+            echo -n "URL: "
+            read url
+            if [[ -n "$url" ]]; then
+                echo "$url"
+                return 0
+            fi
+            return 1
+            ;;
+            
+        "3"|"b"|"")
+            return 1
+            ;;
+            
+        *)
+            echo -e "${RED}无效的选择${NC}"
+            return 1
+            ;;
+    esac
 }
 
 # 修改 handle_command 函数
