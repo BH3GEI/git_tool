@@ -62,6 +62,7 @@ declare -A git_commands=(
     ["3.8"]="git push --tags             # 推送所有标签"
     ["3.9"]="git clone --depth 1 <url>   # 浅克隆仓库"
     ["3.10"]="git pull --rebase          # 使用rebase方式拉取"
+    
 
     # 撤销与回退
     ["4.1"]="git reset --hard HEAD^      # 回退到上一个版本"
@@ -407,7 +408,7 @@ execute_command() {
     if [ $is_dangerous -eq 1 ]; then
         echo -e "\n${RED}⚠️  警告：这是一个危险命令！${NC}"
         echo -e "${RED}该命令可能会导致：${NC}"
-        echo -e "  • 不可恢复的数据丢失"
+        echo -e "  • 不可恢复的数据丢"
         echo -e "  • 工作区的永久性改变"
         echo -e "${YELLOW}命令：${NC}$command"
         echo -n "确定要执行吗？(y/N): "
@@ -418,7 +419,7 @@ execute_command() {
         fi
     fi
     
-    # 显示命令并提供编辑选项
+    # 始终显示命令并提供编辑选项
     echo -e "\n${YELLOW}当前命令：${NC}${command}"
     echo -e "按回车直接执行，输入 'e' 编辑命令: "
     read edit_choice
@@ -519,56 +520,11 @@ handle_command() {
     local key=$1
     command=$(echo "${git_commands[$key]}" | cut -d '#' -f1 | tr -d '\n' | tr -d '\r' | sed 's/[[:space:]]*$//')
     
-    # 特殊处理 gitignore 模板命令
-    if [[ $command == "apply_gitignore_template" ]]; then
-        echo -e "\n${YELLOW}选择 .gitignore 模板：${NC}"
-        echo "----------------------------------------"
-        for key in "${!gitignore_templates[@]}"; do
-            echo -e "${BLUE}$key${NC}. ${gitignore_templates[$key]}"
-        done
-        echo "----------------------------------------"
-        echo "可以输入多个编号（用空格分隔）"
-        echo -n "请选择要应用的模板: "
-        read -a choices
-
-        if [[ ${#choices[@]} -eq 0 ]]; then
-            echo -e "\n${YELLOW}未选择任何模板，操作取消${NC}"
-            echo -e "\n按回车键继续..."
-            read
-            return
-        fi
-
-        for choice in "${choices[@]}"; do
-            if [[ -n "${gitignore_templates[$choice]}" ]]; then
-                template_name="${gitignore_templates[$choice]}"
-                echo -e "\n${GREEN}应用 $template_name 模板${NC}"
-                if [[ ! -f .gitignore ]]; then
-                    echo -e "# $template_name" > .gitignore
-                    echo "${gitignore_contents[$template_name]}" >> .gitignore
-                else
-                    echo -e "\n# $template_name" >> .gitignore
-                    echo "${gitignore_contents[$template_name]}" >> .gitignore
-                fi
-            fi
-        done
-        
-        echo -e "\n${GREEN}已更新 .gitignore 文件${NC}"
-        echo "是否要查看文件内容？(y/N): "
-        read view_content
-        if [[ $view_content =~ ^[Yy]$ ]]; then
-            echo -e "\n${YELLOW}=== .gitignore 内容 ===${NC}"
-            cat .gitignore
-        fi
-        
-        echo -e "\n按回车键继续..."
-        read
-        return
-    fi
-
     echo -e "\n${YELLOW}选择操作：${NC}"
     echo "1. 复制命令"
     echo "2. 执行命令 (默认)"
-    echo "3. 返回"
+    echo "3. 执行命令 (编辑后执行)"
+    echo "4. 返回"
     echo -n "请选择 (回车执行命令): "
     read operation
 
@@ -582,10 +538,26 @@ handle_command() {
             fi
             ;;
         "3")
+            # 编辑后执行的逻辑
+            echo -e "\n${YELLOW}原始命令：${NC}${command}"
+            echo -n "请输入修改后的命令: "
+            read -e -i "$command" edited_command
+            
+            if [[ -n "$edited_command" ]]; then
+                is_dangerous=0
+                for dangerous_cmd in "${!dangerous_commands[@]}"; do
+                    if [[ $edited_command == *"$dangerous_cmd"* ]]; then
+                        is_dangerous=1
+                        break
+                    fi
+                done
+                execute_command "$edited_command" $is_dangerous
+            fi
+            ;;
+        "4")
             return
             ;;
-        *)  # 默认执行命令（包括空输入）
-            # 检查是否是危险命令
+        *)  
             is_dangerous=0
             for dangerous_cmd in "${!dangerous_commands[@]}"; do
                 if [[ $command == *"$dangerous_cmd"* ]]; then
@@ -594,21 +566,35 @@ handle_command() {
                 fi
             done
 
-            # 检查命令中是否包含占位符
             if [[ $command == *"<"*">"* ]]; then
                 if [[ $command == *"git remote add origin <url>"* ]]; then
                     echo -e "\n${YELLOW}正在获取仓库信息...${NC}"
                     repo_url=$(get_github_repo_url)
                     if [ $? -eq 0 ]; then
                         complete_command="git remote add origin $repo_url"
-                        execute_command "$complete_command" $is_dangerous
+                        # 显示命令并提供编辑选项
+                        echo -e "\n${YELLOW}当前命令：${NC}${complete_command}"
+                        echo -e "按回车直接执行，输入 'e' 编辑命令: "
+                        read edit_choice
+                        
+                        if [[ $edit_choice == "e" ]]; then
+                            echo -n "请输入修改后的命令: "
+                            read -e -i "$complete_command" complete_command
+                        fi
+                        
+                        if [[ -n "$complete_command" ]]; then
+                            execute_command "$complete_command" $is_dangerous
+                        fi
                     fi
                 else
+                    # 显示命令并提示需要替换参数
                     echo -e "\n${YELLOW}该命令包含需要替换的参数：${NC}"
                     echo -e "${BLUE}$command${NC}"
                     echo -n "请输入完整命令: "
                     read -e -i "$command" complete_command
-                    execute_command "$complete_command" $is_dangerous
+                    if [[ -n "$complete_command" ]]; then
+                        execute_command "$complete_command" $is_dangerous
+                    fi
                 fi
             else
                 execute_command "$command" $is_dangerous
