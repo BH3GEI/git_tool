@@ -1,3 +1,38 @@
+# Git Command Dictionary
+
+An interactive Git command reference tool designed to help developers quickly look up, learn, and execute Git commands.
+
+## Features
+
+- 📚 Command Categorization: Organizes Git commands by functionality
+- 🔍 Command Search: Supports keyword search for commands
+- 📋 Command Copy: One-click copy to clipboard
+- ⚡ Command Execution: Directly execute selected commands
+- ✏️ Command Editing: Allows editing commands before execution
+- ⚠️ Dangerous Command Alerts: Warns about commands that may cause data loss
+- 🎯 .gitignore Templates: Includes various commonly used .gitignore templates
+- 🔗 GitHub Integration: Supports quick operations via GitHub CLI
+
+## Command Categories
+
+1. Basic Operations
+2. Branch Management
+3. Remote Operations
+4. Undo and Rollback
+5. Staging Operations
+6. GitHub CLI
+
+## Installation and Usage
+
+### Prerequisites
+
+- Bash environment
+- Git
+- [GitHub CLI](https://cli.github.com/) (optional, for enhanced GitHub functionality)
+
+
+
+
 # Git 命令速查字典 (Git Command Dictionary)
 
 一个交互式的 Git 命令速查工具，帮助开发者快速查找、学习和执行 Git 命令。
@@ -30,6 +65,3 @@
 - Git
 - [GitHub CLI](https://cli.github.com/) (可选，用于增强 GitHub 相关功能)
 
-### 安装步骤
-
-1. 克隆仓库：
